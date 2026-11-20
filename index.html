@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecuLog | SOC Log Analyzer & Threat Detector</title>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --accent: #38bdf8; --danger: #ef4444; --warn: #f59e0b; --safe: #10b981; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; }
+        header { border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        h1 { margin: 0; color: var(--accent); font-size: 1.8rem; }
+        .card { background: var(--card); padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        textarea { width: 100%; height: 140px; background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 5px; padding: 10px; font-family: monospace; box-sizing: border-box; }
+        .btn-group { margin-top: 10px; display: flex; gap: 10px; }
+        button { background: var(--accent); color: #0f172a; border: none; padding: 10px 18px; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        button.secondary { background: #334155; color: var(--text); }
+        button:hover { opacity: 0.9; }
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
+        .stat-box { background: var(--card); padding: 15px; border-radius: 8px; text-align: center; border-top: 4px solid var(--accent); }
+        .stat-box.danger { border-color: var(--danger); }
+        .stat-box.warn { border-color: var(--warn); }
+        .stat-box h2 { margin: 5px 0; font-size: 2rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; font-size: 0.9rem; }
+        th { color: var(--accent); }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+        .high { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+        .med { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <div>
+            <h1>🛡️ SecuLog Analyzer</h1>
+            <small>Client-Side SIEM & Web/Auth Log Threat Detection Engine</small>
+        </div>
+        <span style="color: var(--safe); font-weight: bold;">● Zero-Trust Local Execution</span>
+    </header>
+
+    <div class="card">
+        <h3>1. Input Server / Authentication Logs</h3>
+        <textarea id="logInput" placeholder="Paste raw Apache/Nginx access logs or SSH auth logs here..."></textarea>
+        <div class="btn-group">
+            <button onclick="analyzeLogs()">🔍 Analyze Logs</button>
+            <button class="secondary" onclick="loadSampleLogs()">📋 Load Sample Attack Logs</button>
+            <button class="secondary" onclick="clearAll()">🗑️ Clear</button>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat-box"><div>Total Lines Parsed</div><h2 id="totalLines">0</h2></div>
+        <div class="stat-box danger"><div>Critical Threats</div><h2 id="highCount">0</h2></div>
+        <div class="stat-box warn"><div>Suspicious Events</div><h2 id="medCount">0</h2></div>
+        <div class="stat-box"><div>Unique Attacker IPs</div><h2 id="ipCount">0</h2></div>
+    </div>
+
+    <div class="card">
+        <h3>2. Detected Security Alerts</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Severity</th>
+                    <th>Attack Vector</th>
+                    <th>Source IP</th>
+                    <th>Log Evidence</th>
+                </tr>
+            </thead>
+            <tbody id="alertTable">
+                <tr><td colspan="4" style="text-align:center; color:#94a3b8;">No logs analyzed yet. Click "Load Sample Attack Logs" and "Analyze Logs".</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const sampleData = `192.168.1.45 - - [20/Nov/2026:10:12:01 +0000] "GET /index.html HTTP/1.1" 200 1024
+185.220.101.4 - - [20/Nov/2026:10:14:22 +0000] "GET /login.php?user=admin' OR '1'='1 HTTP/1.1" 200 542
+45.33.32.156 - - [20/Nov/2026:10:15:10 +0000] "GET /search?q=<script>alert('XSS')</script> HTTP/1.1" 403 312
+103.45.12.88 - - [20/Nov/2026:10:16:01 +0000] "GET /../../../../etc/passwd HTTP/1.1" 400 210
+91.132.44.12 Failed password for invalid user admin from 91.132.44.12 port 55432 ssh2
+91.132.44.12 Failed password for root from 91.132.44.12 port 55433 ssh2
+91.132.44.12 Failed password for root from 91.132.44.12 port 55434 ssh2
+172.16.0.5 - - [20/Nov/2026:10:18:45 +0000] "GET /wp-admin/setup-config.php HTTP/1.1" 404 198`;
+
+const rules = [
+    { name: "SQL Injection (SQLi)", severity: "HIGH", regex: /(\%27)|(\')|(\-\-)|(\%23)|(#)|(UNION\s+SELECT)|(OR\s+'1'='1)/i },
+    { name: "Cross-Site Scripting (XSS)", severity: "HIGH", regex: /(<script>|%3Cscript%3E|javascript:|onerror=|onload=)/i },
+    { name: "Directory Traversal / LFI", severity: "HIGH", regex: /(\.\.\/|\.\.\\|\/etc\/passwd|win\.ini)/i },
+    { name: "SSH Brute-Force Attempt", severity: "MEDIUM", regex: /(Failed password for|Invalid user|authentication failure)/i },
+    { name: "Admin Panel Recon / Probing", severity: "MEDIUM", regex: /(\/wp-admin|\/phpmyadmin|\/\.env|\/config\.php)/i }
+];
+
+function loadSampleLogs() {
+    document.getElementById('logInput').value = sampleData;
+}
+
+function clearAll() {
+    document.getElementById('logInput').value = '';
+    document.getElementById('alertTable').innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94a3b8;">Cleared.</td></tr>';
+    ['totalLines', 'highCount', 'medCount', 'ipCount'].forEach(id => document.getElementById(id).innerText = '0');
+}
+
+function analyzeLogs() {
+    const raw = document.getElementById('logInput').value.trim();
+    if (!raw) return alert("Please enter or load logs first.");
+
+    const lines = raw.split('\n');
+    let high = 0, med = 0;
+    const attackerIPs = new Set();
+    const tbody = document.getElementById('alertTable');
+    tbody.innerHTML = '';
+
+    lines.forEach(line => {
+        const ipMatch = line.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
+        const ip = ipMatch ? ipMatch[0] : 'Unknown IP';
+
+        rules.forEach(rule => {
+            if (rule.regex.test(line)) {
+                attackerIPs.add(ip);
+                if (rule.severity === "HIGH") high++; else med++;
+
+                const badgeClass = rule.severity === "HIGH" ? "high" : "med";
+                const row = `<tr>
+                    <td><span class="badge ${badgeClass}">${rule.severity}</span></td>
+                    <td><strong>${rule.name}</strong></td>
+                    <td><code>${ip}</code></td>
+                    <td><code>${line.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code></td>
+                </tr>`;
+                tbody.innerHTML += row;
+            }
+        });
+    });
+
+    if (tbody.innerHTML === '') {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#10b981;">✅ No malicious signatures detected.</td></tr>';
+    }
+
+    document.getElementById('totalLines').innerText = lines.length;
+    document.getElementById('highCount').innerText = high;
+    document.getElementById('medCount').innerText = med;
+    document.getElementById('ipCount').innerText = attackerIPs.size;
+}
+</script>
+</body>
+</html>
