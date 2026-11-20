@@ -75,18 +75,20 @@
 </div>
 
 <script>
-const sampleData = `192.168.1.45 - - [20/Nov/2026:10:12:01 +0000] "GET /index.html HTTP/1.1" 200 1024
-185.220.101.4 - - [20/Nov/2026:10:14:22 +0000] "GET /login.php?user=admin' OR '1'='1 HTTP/1.1" 200 542
-45.33.32.156 - - [20/Nov/2026:10:15:10 +0000] "GET /search?q=<script>alert('XSS')</script> HTTP/1.1" 403 312
-103.45.12.88 - - [20/Nov/2026:10:16:01 +0000] "GET /../../../../etc/passwd HTTP/1.1" 400 210
-91.132.44.12 Failed password for invalid user admin from 91.132.44.12 port 55432 ssh2
-91.132.44.12 Failed password for root from 91.132.44.12 port 55433 ssh2
-91.132.44.12 Failed password for root from 91.132.44.12 port 55434 ssh2
-172.16.0.5 - - [20/Nov/2026:10:18:45 +0000] "GET /wp-admin/setup-config.php HTTP/1.1" 404 198`;
+const sampleData = [
+    '192.168.1.45 - - [20/Nov/2026:10:12:01 +0000] "GET /index.html HTTP/1.1" 200 1024',
+    '185.220.101.4 - - [20/Nov/2026:10:14:22 +0000] "GET /login.php?user=admin\' OR \'1\'=\'1 HTTP/1.1" 200 542',
+    '45.33.32.156 - - [20/Nov/2026:10:15:10 +0000] "GET /search?q=\x3Cscript>alert(\'XSS\')\x3C/script> HTTP/1.1" 403 312',
+    '103.45.12.88 - - [20/Nov/2026:10:16:01 +0000] "GET /../../../../etc/passwd HTTP/1.1" 400 210',
+    '91.132.44.12 Failed password for invalid user admin from 91.132.44.12 port 55432 ssh2',
+    '91.132.44.12 Failed password for root from 91.132.44.12 port 55433 ssh2',
+    '91.132.44.12 Failed password for root from 91.132.44.12 port 55434 ssh2',
+    '172.16.0.5 - - [20/Nov/2026:10:18:45 +0000] "GET /wp-admin/setup-config.php HTTP/1.1" 404 198'
+].join('\n');
 
 const rules = [
     { name: "SQL Injection (SQLi)", severity: "HIGH", regex: /(\%27)|(\')|(\-\-)|(\%23)|(#)|(UNION\s+SELECT)|(OR\s+'1'='1)/i },
-    { name: "Cross-Site Scripting (XSS)", severity: "HIGH", regex: /(<script>|%3Cscript%3E|javascript:|onerror=|onload=)/i },
+    { name: "Cross-Site Scripting (XSS)", severity: "HIGH", regex: /(\x3Cscript>|%3Cscript%3E|javascript:|onerror=|onload=)/i },
     { name: "Directory Traversal / LFI", severity: "HIGH", regex: /(\.\.\/|\.\.\\|\/etc\/passwd|win\.ini)/i },
     { name: "SSH Brute-Force Attempt", severity: "MEDIUM", regex: /(Failed password for|Invalid user|authentication failure)/i },
     { name: "Admin Panel Recon / Probing", severity: "MEDIUM", regex: /(\/wp-admin|\/phpmyadmin|\/\.env|\/config\.php)/i }
@@ -122,12 +124,13 @@ function analyzeLogs() {
                 if (rule.severity === "HIGH") high++; else med++;
 
                 const badgeClass = rule.severity === "HIGH" ? "high" : "med";
-                const row = `<tr>
-                    <td><span class="badge ${badgeClass}">${rule.severity}</span></td>
-                    <td><strong>${rule.name}</strong></td>
-                    <td><code>${ip}</code></td>
-                    <td><code>${line.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code></td>
-                </tr>`;
+                const safeLine = line.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                const row = '<tr>' +
+                    '<td><span class="badge ' + badgeClass + '">' + rule.severity + '</span></td>' +
+                    '<td><strong>' + rule.name + '</strong></td>' +
+                    '<td><code>' + ip + '</code></td>' +
+                    '<td><code>' + safeLine + '</code></td>' +
+                '</tr>';
                 tbody.innerHTML += row;
             }
         });
